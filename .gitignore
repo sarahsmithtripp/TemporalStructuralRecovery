@@ -1,0 +1,5 @@
+RPA_Data/
+Satellite_Data_/
+Spectral_Clusters/
+*.tif
+*.Rhistory
