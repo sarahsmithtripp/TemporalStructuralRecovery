@@ -1,4 +1,8 @@
 library(terra)
+
+###
+#This creates a nice table to input into the paper that describes the spatial aggregation of the structural groups on the landscape 
+###
 groups <- rast('D:/Paper2_Clean/Spectral_Clusters/Structural_groups.tif')
 levels(groups)
 metrics_calc <- c("lsm_c_contig_cv",

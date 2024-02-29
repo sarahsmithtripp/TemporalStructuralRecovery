@@ -198,12 +198,33 @@ index_vals <- ggplot(pca_var_full, aes(x = reorder(name, -scaled_mag), y = scale
   theme(axis.text.x = element_blank(), 
         panel.grid = element_blank(), 
         axis.title.x = element_blank(), 
-        axis.title.y = element_text(size = 13))
+        axis.title.y = element_text(size = 13),
+        axis.ticks.x = element_blank())
 compound_pc <- cowplot::plot_grid(pca_plot, index_vals, nrow = 2, rel_heights = c(1, 0.4), 
                                   labels = c('A', 'B'))
 compound_pc
 # save_plot(compound_pc, filename = 'F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/PCA_plot.png',
 #           base_width = 8, base_height = 9)
+
+##get the most distinct spectral clsuter 
+# clsut <- readRDS('D:/Paper2_Clean/Spectral_Clusters/Kmeans_outputs/it_kmeans_highsev.rds')
+# centroids <- clsut[[2]]$centroids
+# #change clusters 
+# mapping <- c(1,1, 2, 3, 4, 5, 6, 3, 5, 6, 7, 1, 8)
+# 
+# 
+# clusts_new <- as.data.frame(clusts) %>% 
+#   mutate(new_clusts = mapping[clusts])
+# 
+# dist(centroids)
+# average_dist <- apply(dist(centroids), 2, FUN = mean)
+# names(average_dist) <- mapping[names(average_dist)]
+# ordered <- order(average_dist)
+# names_out <- order(average_dist)
+# real_clust <- mapping[names_out]
+# average_dist
+
+
 
 
 # Baseline Graph ----------------------------------------------------------
@@ -212,7 +233,7 @@ in_dat <- list.files('D:/Paper2_Clean/Spectral_Clusters/metrics/Trajectories',
                      full.names = T) %>% map(., .f = arrow::read_feather) %>%
   rbindlist()
 plot_data <- in_dat %>% filter(Years_indist >=-3 & Years_indist <18) %>% 
-  dplyr::select(Diff_Baseline, band, clust, Years_indist) %>% distinct() %>% 
+  dplyr::select(Diff_Baseline, band, clust, Years_indist) %>% distinct() #%>% 
   mutate(Diff_Baseline = ifelse(clust == 2 & Years_indist == 4, NA, Diff_Baseline))  #clean up for plotting
 plot_data
 sel_plot <-plot_data %>% subset(clust %in% c(1,3,4,5,8)) %>% 
@@ -268,7 +289,7 @@ cluster_counts_attributed <- arrow::read_feather('D:/Paper2_Clean/Spectral_Clust
 all_years <- ggplot(cluster_counts, 
                     aes(x = 1, y = proportion * 100, fill = as.factor(z))) + 
          geom_bar(stat = 'identity') + scale_fill_manual(values = in_cols) + 
-  xlab('All Years') + theme_bw() + ylab('% of Landscape = Cluster') + 
+  xlab('All Years') + theme_bw() + ylab('% of Landscape = Cluster') +coord_flip(ylim = c(0,100)) +
   theme(legend.position = 'none', 
         axis.ticks.x = element_blank(), 
         axis.text.x = element_blank(),
@@ -278,32 +299,13 @@ all_years <- ggplot(cluster_counts,
         axis.title.y = element_text(size = 17, face = 'bold'),
         panel.border = element_rect(color = "black", 
                                      fill = NA, 
-                                     size = 1.5))
+                                     size = 1.5)) #+ 
+  scale_y_continuous(breaks = c(0, 25, 50, 100))
 all_years
-selected_data <- cluster_counts_attributed %>%
-  #subset(Dist_Year %in% c(1992, 2006, 2010, 2014, 2017, 2018)) %>% 
-  subset(Dist_Year %in% c(1988, 1992, 2006, 2007, 2010, 2014, 2017)) %>% 
-  group_by(Dist_Year) %>% 
-  mutate(x_val = cur_group_id()) %>% ungroup()
-some_years <- ggplot(selected_data,
-       aes(x =x_val, y = prop_year, fill = as.factor(clust))) + 
-  scale_x_continuous(breaks = sort(unique(selected_data$x_val)), 
-                     labels = sort(unique(selected_data$Dist_Year))) + 
-  geom_col(position = 'fill') + scale_fill_manual(values = in_cols) + 
-  labs(fill = 'Cluster')+
-  theme_bw() +
-  theme(axis.title.x = element_blank(), 
-        axis.ticks.y = element_line(size = 2), 
-        axis.text.y = element_blank(), 
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(size = 8, face = 'bold'),
-        legend.title = element_text(size = 16), 
-        legend.text = element_text(size = 14))
-
-
-proportions <- plot_grid(all_years, some_years, rel_widths = c(0.6, 1), labels = c('A', 'B'))   
-# save_plot(proportions, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/proportions.png',
-#           base_width = 6, base_height = 6)
+source('D:/Paper2_Clean/Data_ProcessingScripts/Proportions_Graph.R')
+#out ## this ithe proportions graph and you can plot it here 
+save_plot(out, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/proportions.png',
+          base_width = 6, base_height = 7)
 
 list_save[[5]] <- cluster_counts
 list_save[[6]] <- cluster_counts_attributed
@@ -422,7 +424,7 @@ lidar_coverage <- ggplot(pie_dat, aes(x = clust,
                                       y =  prop,
                                       group = clust,
                                       fill = as.factor(years_indist))) + 
-  geom_col(position = 'stack') + labs(fill = 'Years Post Disturbance')+
+  geom_col(position = 'stack') + labs(fill = 'Time Since Disturbance\n(years)')+
   geom_text(aes(y = 0.5, x = clust, label = paste('n =',tot_)),
             size = 6) +
   xlab('Spectral Cluster') + 
@@ -462,7 +464,7 @@ lidar_coverage <- ggplot(pie_dat, aes(x = clust,
                     y =  prop,
                     group = clust,
                     fill = as.factor(years_indist))) + 
-  geom_col(position = 'stack') + labs(fill = 'Years Post Disturbance')+
+  geom_col(position = 'stack') + labs(fill = 'Time Since Disturbance\n(years)')+
   geom_text(aes(y = 0.5, x = clust, label = paste('n =',tot_)),
             size = 6) +
   xlab('Spectral Cluster') + 
@@ -494,31 +496,42 @@ struct_mean  <- distinct(dplyr::select(clean_struct,
                        c('mean_measure',
                          'mean_clust', 'sem', 'years_indist','n_group_year',
                          'new_clusts'))) %>% 
-  mutate(dist_mean = mean_clust - mean_measure)
+  mutate(dist_mean = mean_clust - mean_measure,
+         dist_perc = ((mean_clust - mean_measure) / mean_measure )*100)
 
+head(struct_mean)
+struct_mean_n <- mutate(struct_mean, new_groups = case_when(new_clusts == "1" ~ 1,
+                                                            new_clusts == "C" ~ 2, 
+                                                            new_clusts == '2' ~ 3, 
+                                                            new_clusts == '6' ~ 4, 
+                                                            new_clusts == '7' ~ 5))
+clust_names <- c("Low Density\n Conifer",
+                 "High Density\nConifer",
+                 "Shelterwood to\nLate Growth",
+                 "Stem Exclusion to\nStem Loss",
+                 "Stem Exclusion to\nDeciduous Ingrowth")
+struct_mean_n$new_groups <- 
+  #add factor labels for plotting 
+  factor(struct_mean_n$new_groups,
+         labels = clust_names)
 
-
-structure_alt2 <- ggplot(data = struct_mean) +
-  facet_wrap( ~ model_type, scales = 'free', labeller = label_parsed) +
+structure_alt2 <- ggplot(data = struct_mean_n) +
+  facet_grid(model_type ~ new_groups, scales = 'free_y', 
+             labeller = 
+               labeller(.rows = label_parsed, .multi_line = T),
+             switch = 'y') +
   labs(filler = "Spectra\nCluster") +
-  geom_hline(aes(yintercept = 0), linewidth = 0.5) +
+  geom_hline(aes(yintercept = 0), linewidth = 0.5)+
+  geom_segment( aes(x=years_indist,
+                    xend=years_indist, 
+                    y=0, yend=dist_mean), color="grey") +
   geom_point(aes(
     x = years_indist,
     y = dist_mean ,
     color = as.factor(new_clusts)
-  ), size = 4,
-  position = position_dodge(width = 0.3)) +
-  geom_pointrange(
-    aes(
-      ymin = dist_mean - sem,
-      ymax = dist_mean + sem,
-      x = years_indist,
-      y = dist_mean,
-      color = as.factor(new_clusts)
-    ),
-    position = position_dodge(width = 0.3)
-  ) +
-  xlab("Years Post Disturbance") +
+  ), size = 4, 
+  position = position_dodge(width = 0.3))  +
+  xlab("Time Since Disturbance\n(years)") +
   ylab(NULL) +
   labs(
     color = paste0(
@@ -529,22 +542,32 @@ structure_alt2 <- ggplot(data = struct_mean) +
   ) +
   scale_color_manual(values = in_cols2) +
   theme_classic(base_size = 15) +
+  scale_x_discrete(breaks  =c(5,8,12,16),
+labels = waiver())+
   ##add labels that describe the zero line 
   facetted_pos_scales(y = list(
-    NULL,
     scale_y_continuous(sec.axis =
                          dup_axis(
-                           breaks = c(-2.0,-1.5,-1.0,-0.5,  0.0,  0.5),
-                           labels = c(' ', ' ', ' ',
-                                      ' ',  'No Deviance\nFrom Mean', ' '),
+                           breaks = c(0.0),
+                           labels = c('No Deviance\nFrom Mean'),
                            name = NULL
                          )),
-    NULL,
     scale_y_continuous(sec.axis =
                          dup_axis(
-                           breaks = c(-2.0,-1.5,-1.0,-0.5,  0.0,  0.5),
-                           labels = c(' ', ' ', ' ',
-                                      ' ', 'No Deviance\nFrom Mean', ' '),
+                           breaks = c(0.0),
+                           labels = c('No Deviance\nFrom Mean'),
+                           name = NULL
+                         )),
+    scale_y_continuous(sec.axis =
+                         dup_axis(
+                           breaks = c(0),
+                           labels = c('No Deviance\nFrom Mean'),
+                           name = NULL
+                         )),
+    scale_y_continuous(sec.axis =
+                         dup_axis(
+                           breaks = c(0),
+                           labels = c('No Deviance\nFrom Mean'),
                            name = NULL
                          ))
   )) +
@@ -553,16 +576,20 @@ structure_alt2 <- ggplot(data = struct_mean) +
       fill = NA,
       color = 'black',
       size = 1
-    ),
+    ), strip.text.y = element_text(size = 10),
+    strip.placement = 'outside',
+    strip.background.y = element_blank(),
     legend.title = ggtext::element_markdown(),
-    legend.position = c(1.1, 0.6),
-    plot.margin = unit(c(0.1, 4, 0.1, 0.1), 'cm')
+    legend.position = c(1.15, 0.6),
+    plot.margin = unit(c(0.1, 4, 0.1, 0.1), 'cm'),
+    axis.text.y.right = element_text(angle = 270, hjust = 0.5, 
+                                     size = 10)
   ) + 
-  guides(color = guide_legend(ncol = 2))
+  guides(color = guide_legend(ncol = 2)) + theme(legend.position = "none")
 structure_alt2
-#
-# save_plot(structure_alt2, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/structureline2.png',
-#           base_width = 12, base_height = 8)
+# 
+save_plot(structure_alt2, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/structure_split.png',
+          base_width = 12, base_height = 10)
 
 
 result_data <- struct_mean %>% dplyr::select('model_type', 
@@ -919,7 +946,7 @@ spect_struct_big
 
 list_save[[10]] <- spect_struct_big
 
-save(list_save, file = 'F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/summary_tables.RData')
+#save(list_save, file = 'F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/summary_tables.RData')
 
 
 new_struct_sums_long <- data.table(dplyr::select(new_struct, -c('i.cell')))%>%
