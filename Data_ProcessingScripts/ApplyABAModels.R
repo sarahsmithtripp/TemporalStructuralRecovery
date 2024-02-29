@@ -12,7 +12,8 @@ renam_funt <- function(r, name){
 ## count number of trees in each raster cell function
 count_funct <- function(trees, lidar_rast){
   trees$Z <- as.character(trees$Z)
-  tree_cn <- terra::rasterize(x = trees,field = "treeID", y = lidar_rast, fun = "length")
+  tree_cn <- terra::rasterize(x = trees,y = lidar_rast,
+                              field = "treeID", fun = "length")
   lidar_rast_out <- c(lidar_rast, tree_cn)
   return(lidar_rast_out)
  }
@@ -39,19 +40,34 @@ base_model <- readRDS('F:/Quesnel_RPA_Lidar2022/ABA_validation/bare_ground_model
 
 #2. Read in lidar data 
 base_dir <- "D:/Paper2_Clean/RPA_data/ABA_Models/Model_Inputs"
-blocks_dir_base <- list.dirs(base_dir, recursive = F) %>% .[grepl("..Site..",.)] %>% 
-.[!grepl("Site72",.)] %>% .[!grepl("94_com",.)] ### remove site 72 and site 94 
+blocks_dir_base <- list.dirs(base_dir, recursive = F)  
 ## isolate lidar data
-lidar_dir <- blocks_dir_base  %>% .[!grepl("*Site72", .)] %>% 
-as.list(strsplit(., ",")) #%>%
+lidar_dir <- blocks_dir_base %>% 
+as.list(strsplit(., ",")) %>%
 purrr::map(., .f = list.files,
 pattern = '30m.tif$', full.names = T) %>%
 Filter(length, .)
 
+### Momentary filter to the area we are interested in applying the models 
+# lidar_dir <- lidar_dir[11:12]
+# blocks_dir_base <- blocks_dir_base[11:12]
 #As a raster
 lidar_rast <- lidar_dir %>%purrr::map(., .f = remove_dtm) %>% 
 purrr::map(., .f = rast)
+## standardize names
+names_std <- c("basic_30m_1", "basic_30m_2", "basic_30m_3", "basic_30m_4", 
+               "basic_30m_5", "basic_30m_6", "basic_30m_7", "basic_30m_8", 
+               "canopy_disp_30m_1", "canopy_disp_30m_2", "canopy_disp_30m_3",
+               "canopy_disp_30m_4", "canopy_disp_30m_5", "canopy_disp_30m_6",
+               "L_moments_30m_1", "L_moments_30m_2", "L_moments_30m_3", 
+               "L_moments_30m_4", "L_moments_30m_5", "L_moments_30m_6", 
+               "L_moments_30m_7", "percent_30m_1", "percent_30m_2", 
+               "percent_30m_3", "percent_30m_4")
 
+lidar_rast <- purrr::map(lidar_rast, .f = function(x) { 
+  set.names(x, names_std)
+  return(x)})
+lidar_rast[[1]]
 #3. Read in ttops shapefiles 
 tree_shps <- blocks_dir_base %>%
  as.list(strsplit(., ",")) %>%
@@ -60,14 +76,40 @@ full.names = TRUE) %>%
 Filter(length, .) %>% purrr::map(., .f = vect) 
 
 ##fix CRS of plot  (which is in some weird projection) 
+## Set a project crs
+crs_proj <- crs(lidar_rast[[1]])
 
 crs_new <- rast(tree_shps[[3]])
 crs_old <- crs(rast(tree_shps[[4]]))
 crs(tree_shps[[4]]) <- crs_new
 
+
+## transform any raster that does not meet the necessary standards
+## input an index raster 
+lidar_rast <- purrr::map(lidar_rast, .f = function(x){
+  if (crs(x) == crs_proj) {
+    x  <- x
+  } else if (crs(x) != crs_proj){
+    x <- project(x, crs_proj, res = 30)
+  }
+  return(x)
+})
+
+tree_shps <- purrr::map(tree_shps, .f = function(x){
+  if (crs(x) == crs_proj) {
+    x  <- x
+  } else if (crs(x) != crs_proj){
+    x <- project(x, crs_proj)
+  }
+  return(x)
+})
+
+
+
+
 #4. Count number of trees in each raster cell output for ttops function 
 lidar_withtrees <-purrr::map2(tree_shps, lidar_rast, .f = count_funct, .progress = TRUE)
-
+names(lidar_withtrees[[4]]) <- names(lidar_withtrees[[1]])
 
 ## APPLY MODEL 1 - PROBABILITY OF BASAL AREA 
 
@@ -134,7 +176,8 @@ return(lidar_out)
 
 #1. Select layers for the model 
 select_layers <- c('pzabovemean', 'Lkurt', 'ttops', 'zmax', 'CRR')
-model_3_lidar <- lidar_withtrees %>% purrr::map(., .f = subset, c("percent_30m_1", # perc above mean 
+model_3_lidar <- lidar_withtrees %>% purrr::map(., .f = subset, 
+                                                c("percent_30m_1", # perc above mean 
 "L_moments_30m_6",  ## Lkurt
 "treeID_length",  ## ttops
 "basic_30m_2", #zmax 
@@ -169,7 +212,7 @@ model_4_lidar <- lidar_rast %>% purrr::map(., .f = subset, c("percent_30m_1", # 
 fit_model_4 <-purrr::map(model_4_lidar, .f = predict, model_4) %>%purrr::map(., .f = renam_funt, "composition")#%>%purrr::map(., .f = clamp, lower = 0)
 
 ## APPLY MODEL 5 - BARE GROUND MODEL 
-model_5 <- bare_ground[[1]]
+model_5 <- base_model[[1]]
 #1. Select lidar layers
 select_layers <- c("pzabove0.2", "pzabove1.3", "CRR", "zentropy", "Lcoefvar")
 
@@ -185,24 +228,28 @@ purrr::map(., .f = renam_funt, "bare_ground")#%>%purrr::map(., .f = clamp, lower
 
 ######  join modeling data 
 # Get year of disturbance based on site number
-site_list <- unlist(blocks_dir_base) %>% str_extract(., pattern = "Site[[:digit:]][[:digit:]].*") ## Get the site ID 
-dist_year_list <- c('2003','2006','2006','2006','2014','2010','2014','2018','2018','2018') ## these are the disturbance years
+site_list <- unlist(blocks_dir_base) #%>% str_extract(., pattern = "Site[[:digit:]][[:digit:]].*") ## Get the site ID 
+dist_year_list <- 
+  c('2003','2006','2006','2006','2014','2010','2011', '2014','2018','2018','2018', 
+    '2011',## for the west fire, this was flow in 2021, so shift by 1 year to make sure that the correct 
+    '2011',## 'time' since disturbance is applied 
+    '2011') ## these are the disturbance years
 attach_site_df <- data.frame(Plot_ID = site_list,  dist_year = dist_year_list) ## create a dataframe
 
 model_data_frame <-purrr::map2(fit_model_2, fit_model_3,.f = function(x,y) c(x,y)) %>%
  purrr::map2(., .y = fit_model_4, .f = function(x,y) c(x,y)) %>%
   purrr::map2(., .y = predict_model_1, .f = function(x,y) c(x,y)) %>% 
   purrr::map2(., .y = fit_model_5, .f = function(x, y) c(x,y))
-crs(model_data_frame[[4]]) <- NULL
 
-chms <- blocks_dir_base  %>% .[!grepl("*Site72", .)] %>% 
-  as.list(strsplit(., ",")) %>%
-  purrr::map(., .f = paste0,
-             '/Lidar/processed/05_raster/chm/') %>%
-  purrr::map(., .f = list.files,
-             pattern = '1_filled.tif$', full.names = T) %>%
-  Filter(length, .) %>% map(., .f = rast)
-
+### recreate as a raster
+for(i in 1:length(model_data_frame)){
+  model_data_frame[[i]]$dist_year <- rep(dist_year_list[i], ncell(model_data_frame[[i]]))
+}
+out <- sprc(model_data_frame)
+m <- merge(out)
+writeRaster(m, filename = 'D:/Paper2_Clean/RPA_data/ABA_Models/Model_Outputs/lidar_rast2.tif',
+            overwrite = T)
+plot(m)
 
 #### SAVE RASTERS OF MODELS 
 # for(i in 1:10){
@@ -212,7 +259,6 @@ chms <- blocks_dir_base  %>% .[!grepl("*Site72", .)] %>%
 model_data_frame <- model_data_frame %>% purrr::map(., .f = as.data.frame, xy = TRUE)
 
 
-
 ## Add Site # and Disturbance year to TABLE of estimated values 
 for(i in 1:length(model_data_frame)) {  
   model_data_frame[[i]]$Plot_ID = attach_site_df[i, 1]
@@ -220,6 +266,9 @@ for(i in 1:length(model_data_frame)) {
 }
 lidar_models <- bind_rows(model_data_frame) %>% 
 mutate(meas_bsl = ifelse(.$PBsl >= 0.5, 'Bsl', 'No_Bsl'))
+dim(lidar_models)
+write.csv2(lidar_models, 
+           "D:/Paper2_Clean/RPA_data/ABA_Models/Model_Outputs/lidar_models_df.csv")
 
-#data.table::fwrite(lidar_models, "D:/Quesnel_RPA_Lidar2022/Clusters/Mixed_Gaussian/lidar_model_raw_outputs.csv")
+
 
