@@ -19,9 +19,9 @@ ifelse(exists('struct_pc'),
 # The vegdist function is used to calculate a distance matrix from the data.
 # consider columsn 4 to 7 for this calculation, which are where structure values are stored
 ## UNCOMMENT HERE TO RERUN
-#dist_matrix <- vegdist(struct_pc[, 4:7], method = "euclidean") ## calculate euclid
-
-dist_matrix <- readRDS(file = 'D:/Paper2_Clean/Spectral_Clusters/Structural_Data/euc_dist_mat.rds')
+dist_matrix <- vegdist(struct_pc[, 4:7], method = "euclidean") ## calculate euclid
+#saveRDS(dist_matrix, file = 'D:/Paper2_Clean/Spectral_Clusters/Structural_Data/euc_dist_mat.rds')
+#dist_matrix <- readRDS(file = 'D:/Paper2_Clean/Spectral_Clusters/Structural_Data/euc_dist_mat.rds')
 
 # STEP 2: Run the PERMANOVA test using the adonis function
 # The adonis function is used to perform the PERMANOVA test.
@@ -29,7 +29,9 @@ dist_matrix <- readRDS(file = 'D:/Paper2_Clean/Spectral_Clusters/Structural_Data
 # The data$clust extracts the 'clust' column from the data frame
 # and uses clusters to group in anaylsis use as the grouping variable in the analysis.
 ## RUN ONCE WILL TAKE ~ 1 day
-#permanova_result <- adonis2(dist_matrix ~ struct_pc$clust)
+permanova_result <- adonis2(dist_matrix ~ struct_pc$clust, permutations = 999, 
+                            perm= how(blocks = struct_pc$clust,
+                                      plots = plots(strata = struct_pc$year)))
 
 # STEP 3: Create Weighted Sample (for post-hoc analyses)
 ## create a weighed sample for post-hoc analyses
@@ -49,30 +51,38 @@ bird.div<-adonis2(dist_sample~weighted_sample$clust, permutations = 999,
                   perm= how(blocks = weighted_sample$clust,
                             plots = plots(strata = weighted_sample$year))) ## permute within years
 
-bird.div2<-adonis2(dist_sample~weighted_sample$clust * weighted_sample$years_indist, permutations = 999)## permute within years
+bird.div2<-adonis2(dist_sample~weighted_sample$clust * weighted_sample$years_indist, 
+                   permutations = 999)## permute within years
 
 ##create flextable output for manuscript
-Test_stat <- rownames(bird.div2[1]) %>% str_remove_all(
-  pattern = "weighted_sample"
+Test_stat <- rownames(permanova_result[1]) %>% str_remove_all(
+  pattern = "struct_pc$"
 ) %>% str_replace_all(., pattern = "\\$", replacement = " ")
-MANOVA <-  data.frame(Df = bird.div2$Df,
-                      SumSq = bird.div2$SumOfSqs,
-                      `F` = bird.div2$`F`,
-                    P_val = bird.div2$`Pr(>F)`)%>%
+MANOVA <-  data.frame(Df = permanova_result$Df,
+                      SumSq = permanova_result$SumOfSqs,
+                      `F` = permanova_result$`F`,
+                    P_val = permanova_result$`Pr(>F)`)%>%
   round(., digits = 2) %>%
   mutate(P_val = ifelse(P_val ==0, '<< 0.01',P_val))
 MANOVA <- cbind(Test_stat, MANOVA) %>%
   data.frame()# add names to the first col
 
-#write.csv(MANOVA,'F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/MANOVA_tab.csv')
+
+#write.csv(MANOVA,'F:/Sync/PhD_Writing/Paper2/test/images/March_Clusters/MANOVA_tab.csv')
 
 # STEP 5: Run Pairwise results for the permanova to combine like clusters
 # p  < 0.001, thus we can explore differences by year
 pairwise_results <- pairwise.perm.manova(dist_sample, weighted_sample$clust,
                                          test = 'wilks')
-
+pairwise_results_new <- pairwise_results
 pairwise_df <- reshape2::melt(pairwise_results$p.value, na.rm = T) %>%
-  mutate(value = round(value, 2))
+  mutate(value = round(value, 2), 
+         comb = paste0(Var1, "-", Var2))
+
+
+ggplot(pairwise_df, aes(comb, value)) + 
+  geom_point() + geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0.05, color = 'red')
 
 yint_df <- data.frame(Var1 = seq(2,8, by = 1),
                       labs = seq(1,7, by = 1),
@@ -97,6 +107,6 @@ ggplot(data = pairwise_df, aes(x = Var1, y = Var2)) +
   xlab('Spectral Cluster')
 
 ## Save to a folder
-#ggsave(filename ='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/cluster_simularities.png', last_plot())
+ggsave(filename ='F:/Sync/PhD_Writing/Paper2/test/images/March_Clusters/cluster_simularities.png', last_plot())
 new_clusters <- c(1, 2, 3,3,3,6,7,3)
 print("New Clusters Created and added to vector 'new_clusters'")

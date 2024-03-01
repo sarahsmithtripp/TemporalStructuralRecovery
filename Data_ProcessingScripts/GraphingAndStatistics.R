@@ -314,8 +314,6 @@ list_save[[6]] <- cluster_counts_attributed
 #2. Read in lidar cluster data 
 #3. Compare the two 
 
-#1. Read in clusters that have been updated to include some of 2006 data, which was omitted in original clusters 
-
 sat_clusters <- in_r
 sat_df <- as.data.frame(sat_clusters, xy = T, cell = T, na.rm =F)
 sat_df <- as.data.table(sat_df)
@@ -323,13 +321,16 @@ sat_count <- na.omit(sat_df) %>%
   group_by(z) %>% summarise(count = n())
 
 ##2 Read in lidar data 
-lidar_all <- rast('D:/Paper2_Clean/RPA_data/ABA_Models/Model_Outputs/Lidar_Models.tif')
+#lidar_all <- rast('D:/Paper2_Clean/RPA_data/ABA_Models/Model_Outputs/Lidar_rast2.tif')
 lidar_dfs <- lidar_all %>% as.data.frame(xy = T, cell = T, na.rm = F) #%>% 
+lidar_dfs <- read_csv2('D:/Paper2_Clean/RPA_data/ABA_Models/Model_Outputs/lidar_models_df.csv') %>% 
+  data.table()
 lidar_to_base <- sat_df[lidar_dfs, on = c('x','y')] # merge the lidar data and satellite data 
 
 
 ##LidarGraph 
 lidar_sat_filtered <- lidar_to_base[complete.cases(lidar_to_base),] 
+dim(lidar_sat_filtered)
 ## stack based on model_type 
 stack_clust <- lidar_sat_filtered %>% 
   pivot_longer(., col = c('composition', 'stem_counts','basal_model', 'PBsl', 'bare_ground'),
@@ -442,9 +443,11 @@ lidar_coverage
 
 
 # PCofA Trajectories  (ADONIS PERMANOVA)-----------------------------------------------------
-struct_pc <- dplyr::select(lidar_filter, c('years_indist', 'clust', 'model_type', 'model_measure', 'i.cell')) %>%  
+struct_pc <- dplyr::select(lidar_filter, 
+                           c('years_indist', 'clust', 'model_type', 'model_measure', 'cell')) %>%  
   filter(!is.na(model_measure))%>% 
-  pivot_wider(id_cols = c('clust', 'years_indist', 'i.cell'), names_from = 'model_type', values_from = 'model_measure',
+  pivot_wider(id_cols = c('clust', 'years_indist', 'cell'),
+              names_from = 'model_type', values_from = 'model_measure',
               values_fn = function(x) {
                 out <- median(x, na.rm = T)
               }) %>%  filter(!is.na(`Stem~Counts~(stems/900~m^2)`)) %>% mutate(`Bare~ground~('%')` = 1-`Bare~ground~('%')`)
@@ -455,6 +458,8 @@ source('D:/Paper2_Clean/Data_ProcessingScripts/MANOVA_And_PostHoc.R')
 in_cols2 = c("#a24936","#ffcf00","#777949","#006ba6","#E57128")
 new_clustletters <- c('1', '2','C', 'C', 'C', '6','7', 'C')
 new_struct <- struct_pc %>% mutate(new_clusts = new_clusters[clust])
+# colors that symbolize years 
+year_cols5 <- c("#22577a","#38a3a5","#9bc2b2", "#57cc99","#80ed99")
 
 
 ## create a stacked bar chart of lidar data used to combine 
@@ -464,20 +469,22 @@ lidar_coverage <- ggplot(pie_dat, aes(x = clust,
                     y =  prop,
                     group = clust,
                     fill = as.factor(years_indist))) + 
-  geom_col(position = 'stack') + labs(fill = 'Time Since Disturbance\n(years)')+
-  geom_text(aes(y = 0.5, x = clust, label = paste('n =',tot_)),
-            size = 6) +
+  geom_col(position = 'stack') + 
+  labs(fill = 'Time Since Disturbance\n(years)')+
+  geom_text(aes(y = 0.5, x = clust, label = paste0('n=',tot_)),
+            size = 4) + coord_cartesian(clip = 'off')+
   xlab('Spectral Cluster') + 
   ylab('RPAs Lidar Coverage \nper Spectral Cluster') +
-  scale_fill_manual(values = year_cols) + 
-  guides(fill= guide_legend(ncol = 4))  +
+  scale_fill_manual(values = year_cols5) + 
+  guides(fill= guide_legend(ncol = 5))  +
   theme_classic(base_size = 15) +
   theme(panel.border = element_rect(fill = NA, color = 'black',size = 1),
         plot.margin = unit(c(1,0.2,0.2,0.2), "cm"),
-                                        legend.position = "top") 
+                                        legend.position = "top",
+        legend.title.align=0.5) 
 lidar_coverage
 # save_plot(lidar_coverage,
-#             filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/LidarCoverage.png',
+#             filename='F:/Sync/PhD_Writing/Paper2/test/images/March_Clusters/LidarCoverage.png',
 #           base_height = 6)
 
 # Clean Up the Lidar Structure Data and Plot Structure Dynamics -----------
@@ -485,7 +492,8 @@ lidar_coverage
 clean_struct <- all_dat %>% mutate(new_clusts = new_clustletters[clust]) %>% 
   dplyr::select(c('years_indist', 'model_measure', 'new_clusts', 'model_type')) %>% 
   group_by(model_type, years_indist) %>% 
-  mutate(mean_measure = mean(model_measure,na.rm =T)) %>% 
+  mutate(mean_measure = mean(model_measure,na.rm =T ),
+         years_indist = as.numeric(ifelse(years_indist==4, 5, paste0(years_indist)))) %>% 
   group_by(model_type, new_clusts, years_indist) %>% 
   mutate(n_group_year = n(),
     mean_clust = mean(model_measure, na.rm = T), 
@@ -497,19 +505,20 @@ struct_mean  <- distinct(dplyr::select(clean_struct,
                          'mean_clust', 'sem', 'years_indist','n_group_year',
                          'new_clusts'))) %>% 
   mutate(dist_mean = mean_clust - mean_measure,
-         dist_perc = ((mean_clust - mean_measure) / mean_measure )*100)
+         dist_perc = ((mean_clust - mean_measure) / mean_measure )*100) 
 
 head(struct_mean)
-struct_mean_n <- mutate(struct_mean, new_groups = case_when(new_clusts == "1" ~ 1,
-                                                            new_clusts == "C" ~ 2, 
-                                                            new_clusts == '2' ~ 3, 
-                                                            new_clusts == '6' ~ 4, 
-                                                            new_clusts == '7' ~ 5))
-clust_names <- c("Low Density\n Conifer",
+struct_mean_n <- mutate(struct_mean, new_groups 
+                        = case_when(new_clusts == "1" ~ 1,
+                                    new_clusts == "C" ~ 2, 
+                                    new_clusts == '2' ~ 3, 
+                                    new_clusts == '6' ~ 4, 
+                                    new_clusts == '7' ~ 5))
+clust_names <- c("Low Density\nConifer",
                  "High Density\nConifer",
                  "Shelterwood to\nLate Growth",
                  "Stem Exclusion to\nStem Loss",
-                 "Stem Exclusion to\nDeciduous Ingrowth")
+                 "Stem Exclusion to\nIngrowth")
 struct_mean_n$new_groups <- 
   #add factor labels for plotting 
   factor(struct_mean_n$new_groups,
@@ -522,11 +531,11 @@ structure_alt2 <- ggplot(data = struct_mean_n) +
              switch = 'y') +
   labs(filler = "Spectra\nCluster") +
   geom_hline(aes(yintercept = 0), linewidth = 0.5)+
-  geom_segment( aes(x=years_indist,
-                    xend=years_indist, 
+  geom_segment( aes(x=as.factor(years_indist),
+                    xend=as.factor(years_indist), 
                     y=0, yend=dist_mean), color="grey") +
   geom_point(aes(
-    x = years_indist,
+    x = as.factor(years_indist),
     y = dist_mean ,
     color = as.factor(new_clusts)
   ), size = 4, 
@@ -542,8 +551,8 @@ structure_alt2 <- ggplot(data = struct_mean_n) +
   ) +
   scale_color_manual(values = in_cols2) +
   theme_classic(base_size = 15) +
-  scale_x_discrete(breaks  =c(5,8,12,16),
-labels = waiver())+
+  scale_x_discrete(breaks  =c(5,8,11,12,16),
+labels = c('5', '8','11','12','16'))+
   ##add labels that describe the zero line 
   facetted_pos_scales(y = list(
     scale_y_continuous(sec.axis =
@@ -585,10 +594,12 @@ labels = waiver())+
     axis.text.y.right = element_text(angle = 270, hjust = 0.5, 
                                      size = 10)
   ) + 
-  guides(color = guide_legend(ncol = 2)) + theme(legend.position = "none")
+  guides(color = guide_legend(ncol = 2)) +
+  theme(legend.position = "none")
 structure_alt2
 # 
-save_plot(structure_alt2, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/structure_split.png',
+save_plot(structure_alt2, 
+          filename='F:/Sync/PhD_Writing/Paper2/test/images/March_Clusters/structure_split.png',
           base_width = 12, base_height = 10)
 
 
@@ -604,7 +615,7 @@ result_data <- struct_mean %>% dplyr::select('model_type',
   pivot_wider(id_cols = c('group', 'model_type'),
               names_from = 'years_indist', values_from = c('mean', 'sem')) %>% 
   dplyr::select(c('group', 'model_type', 'mean_5', 'sem_5',
-                  'mean_8', 'sem_8',
+                  'mean_8', 'sem_8','mean_11', 'sem_11',
                   'mean_12', 'sem_12',
                   'mean_16', 'sem_16'))
   
@@ -618,14 +629,17 @@ lidar_sums_table <- result_data %>% group_by(model_type) %>% mutate(group = as.f
                                   sem_5 = '+/-', 
                                   mean_8 = '8 years',
                                   sem_8 = '+/-',
+                                  mean_11 = '11 years', 
+                                  sem_11 = '+/-',
                                   mean_12 = '12 years',
                                   sem_12 = '+/-',
                                   mean_16 = '16 years',
                                   sem_16 = '+/-')) %>% 
    colformat_double(digits = 2) %>% 
-  add_header_row(values = c('', 'Average +/- SEM By Year'), colwidths = c(2,8), top = TRUE) %>% 
+  add_header_row(values = c('', 'Average +/- SEM By Year'),
+                 colwidths = c(2,10), top = TRUE) %>% 
   align(i = 1, j = NULL, part = 'header', align = 'center')
-lidar_sums_table
+
 # pivot_wider(names_from = model_type, 
   #              values_from = starts_with("mean_"))
 View(structural_sums_cluster_year)
@@ -666,7 +680,7 @@ stem_diff <-filter(lidar_sum, model_type == 'stem_counts') %>%
 # New Structure Through Time Clusters -------------------------------------
 
 new_struct <- new_struct %>% mutate(groups = new_clustletters[clust])
-structure_dat <- dplyr::select(new_struct,-c('i.cell','clust','new_clusts')) %>% data.table(.) |>
+structure_dat <- dplyr::select(new_struct,-c('cell','clust','new_clusts')) %>% data.table(.) |>
   data.table::melt(id.vars = c('groups', 'years_indist')) |>
   as.data.frame() %>% 
   mutate(years_fct = as.factor(years_indist),
@@ -780,15 +794,34 @@ dt2$variable <- factor(dt2$variable,
                                   'Conif:Decid',
                                   "Stem~cts~(n/900~m^2)"))
 
-structure_time <- ggplot(dt2 ) + 
+dt2 <- mutate(dt2, new_groups 
+                        = case_when(groups == "1" ~ 1,
+                                    groups == "C" ~ 2, 
+                                    groups == '2' ~ 3, 
+                                    groups == '6' ~ 4, 
+                                    groups == '7' ~ 5))
+clust_names <- c("Low Density\nConifer",
+                 "High Density\nConifer",
+                 "Shelterwood to\nLate Growth",
+                 "Stem Exclusion to\nStem Loss",
+                 "Stem Exclusion to\nIngrowth")
+dt2$new_groups <- 
+  #add factor labels for plotting 
+  factor(dt2$new_groups,
+         labels = clust_names)
+
+structure_time <- ggplot(dt2 %>% filter(groups %in% c('C', 1))) + 
   geom_boxplot(aes(years_indist, value, group= years_ed,
                    fill = years_fct), 
                position = position_dodge2(preserve = 'single'),
                outlier.colour = NA) + 
-  facet_grid(variable~groups, scales = 'free', switch = 'both',
-             labeller = label_parsed) + 
-  scale_fill_manual(values= year_cols) + 
-  theme_classic() + labs(fill= 'Years Post\nDisturbance') +xlab('Spectral\nCluster')+ylab(NULL)+
+  facet_grid(variable~new_groups, scales = 'free', switch = 'both',
+             labeller = 
+               labeller(.rows = label_parsed, .multi_line = T)) + 
+  scale_fill_manual(values= year_cols5) + 
+  theme_classic() +
+  labs(fill= 'Years Post\nDisturbance') +
+  xlab('')+ylab(NULL)+
   scale_x_discrete(drop = F) +
   theme(panel.border = element_rect(fill = NA, color = 'black'),
     legend.position = 'none', 
@@ -816,7 +849,7 @@ structure_boxplot <- ggplot(all_dat,
              nrow = 4,
              switch = 'x') +labs(filler = "Spectra\nCluster") + 
   xlab('All Data') +
-  ylab(NULL) + ylab(NULL)+ scale_fill_manual(values = year_cols) +
+  ylab(NULL) + ylab(NULL)+ scale_fill_manual(values = year_cols5) +
   scale_x_discrete(expand = c(0,0), label = delete_no_display) +
   theme_classic() + labs(fill= 'Years in\nDisturbance')+
   theme(panel.border = element_rect(fill = NA, color = 'black'),
@@ -834,11 +867,11 @@ library(cowplot)
 library(patchwork)
 Grouped_clusters <- structure_time +structure_boxplot +
   plot_layout(ncol = 2 ,
-            widths = c(2, 0.75)) 
+            widths = c(2, 0.8)) 
 
-# save_plot(Grouped_clusters, filename='F:/Sync/PhD_Writing/Paper2/test/images/September_Clusters/Cluster_throughtime.png',
+# save_plot(Grouped_clusters, filename='F:/Sync/PhD_Writing/Paper2/test/images/March_Clusters/Cluster_throughtime.png',
 #           base_width =8, base_height = 7)
-# 
+
 
 # Structural Grouping Table  ----------------------------------------------
 ## Here is the data we need from  earlier in this script 
