@@ -44,17 +44,34 @@ centroids_2 <- test_c[[3]]$centroids
 ## CENTROIDS rows of centroids = nclusters, columnds = n_cols 
 centroids  <- rbind(centroids_1, centroids_2)
 dat <- ClusterR::center_scale(data_fil, mean_center = T, sd_scale = T)
+
+### UPDATED METRICS HERE (not necessary to use but useful to have)
+dat<- arrow::read_feather('Y:/Smith-Tripp/SBS_metrics/scaled_metrics.feather')
+
+dat_fil = dat %>% filter(!is.na(TCG_regrowth))
+dat_clean = na.omit(dat_fil)
+dat <- dplyr::select(dat_clean, -c('X', 'Y', '__index_level_0__'))
 dat_dist <- dist(test) ## calculate a distance matrix
+
+## using kmeans ++ instead 
 new_kmn <- ClusterR::KMeans_rcpp(as.data.frame(dat), clusters = 13, num_init = 10, max_iters = 100, 
 fuzzy = T, CENTROIDS = centroids)
+
+new_kmn <- ClusterR::KMeans_rcpp(as.data.frame(dat), clusters = 13, num_init = 10, max_iters = 100, 
+                                 fuzzy = T, initializer = "kmeans++")
 #saveRDS(new_kmn, file ='F:/Quesnel_RPA_Lidar2022/Clusters/all_fire_clusters/kmeans/it_reclust_highsev_Sept.rds' )
 #arrow::write_feather(as.data.frame(dat),'F:/Quesnel_RPA_Lidar2022/SatHigh_Sev_NaturalRegn/May22ClusteringData.feather')
 
 # saveRDS(new_kmn, file ='F:/Quesnel_RPA_Lidar2022/Clusters/Exploratory_Clusters/test_reclust_highsev.rds')
 # arrow::write_feather(as.data.frame(dat),'F:/Quesnel_RPA_Lidar2022/Clusters/Exploratory_ClustersClusteringData.feather')
 # source for combined clusters https://www.datanovia.com/en/lessons/cluster-validation-statistics-must-know-methods/
+dat_clean$clust <- new_kmn$clusters
+### write to rast 
+new_rast <- rast(dplyr::select(dat_clean, c(x = X, y = Y, z = clust)), type = 'xyz')
+crs(new_rast)= "EPSG:3005"
 
-
+writeRaster(new_rast, filename = 'C:/Users/ssmithtr.stu/OneDrive - UBC/Desktop/test.tif', 
+            overwrite = T)
 # Collapse Like Clusters --------------------------------------------------
 
 #cluster_IDS = arrow::read_feather('F:/Quesnel_RPA_Lidar2022/Clusters/all_fire_clusters/kmeans/high_severite_reclusters/cluster_IDs.feather')

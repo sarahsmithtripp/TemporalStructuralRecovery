@@ -87,11 +87,45 @@ SA_hex_sf$ID <- seq(1, nrow(SA_hex_sf), by = 1)
 # calculate the coverage for each structural group 
 grps_NA <- grps
 grps_NA[!is.na(grps_NA)] <- 1
-most_in_A_fract <- exact_extract(grps_NA, SA_hex_sf, fun = 'frac') ### total coverved by a class
-most_in_A_df <- data.frame(ID = seq(1, nrow(SA_hex_sf)), 
-                           mode = most_in_A_alt,
-                           cov = most_in_A_fract)
-SA_mode <- SA_hex_sf %>% left_join(most_in_A_df)
+grps_NA[is.na(grps_NA)] <-0
+
+# Define the values to include in the vector
+possible_values <- c("A", "B", "C")
+
+# Generate a random vector of length 100 with values from possible_values
+x <- sample(possible_values, 100, replace = TRUE)
+
+## get frequency
+get_fract <- function(x){
+  counts <- table(x)
+  sum_ <- sum(counts)
+  most_common_prop <- (counts[which.max(counts)])/sum_
+  return(most_common_prop)
+  }
+
+
+most_in_A_fract <- extract(grps_NA, SA_hex_sf, fun = get_fract) ### total coverved by a class
+in_r <- rast('F:/Quesnel_RPA_Lidar2022/Clusters/SBS_clusters/Septemb_Clustsers/test_folder/structural_groups_clip.tif')
+cropped <- crop(grps, SA_hex_sf) 
+most_in_A_table <-exact_extract(grps, SA_hex_sf, c('variety', 'majority', 'frac'))
+total_cover <- exact_extract(grps_NA, SA_hex_sf, c('frac'))
+total_cover <- total_cover%>% 
+most_in_A_table$ID = seq(1, nrow(most_in_A_table), by =1)
+Extract_values <- most_in_A_table %>% filter(!is.na(majority)) %>% 
+  pivot_longer(cols = starts_with('frac'),
+               names_to = 'group', values_to = 'proportion') %>% 
+  mutate(group = as.numeric(str_remove(group, pattern = 'frac_')),
+         prop_max = ifelse(group == majority, proportion, NA)) %>% 
+  group_by(ID) %>%
+  dplyr::select(-c('proportion', 'group')) %>% distinct() %>% 
+  group_by(ID) %>% 
+  mutate(n_r = n()) %>% filter(!is.na(prop_max))
+
+most_in_A_df <- data.frame(ID = most_in_A_table$ID) %>% 
+  full_join(Extract_values, by = 'ID')
+most_in_A_df$total_cover <- total_cover$frac_1
+most_in_A_df$total_max <- most_in_A_df$total_cover * most_in_A_df$prop_max
+SA_mode <- SA_hex_sf %>% cbind(most_in_A_df)
 # SA_mode <- read_sf('F:/Quesnel_RPA_Lidar2022/Clusters/SBS_clusters/Septemb_Clustsers/Most_common.shp') %>% 
 #   mutate(cov = as.numeric(cov)) %>% vect()
 SA_mask <- vect(SA_mode) %>% mask(vect(SA)) 
@@ -105,7 +139,7 @@ tm_shape(SA_mode) +
 new_cols <- c("#a24936","#ffcf00","#777949","#006ba6","#E57128")
 
 class(SA_mode)
-write_sf(SA_mode, "D:/Paper2_Clean/Spectral_Clusters/Structural_Data/Most_common.shp")
+write_sf(SA_mode, "D:/Paper2_Clean/Spectral_Clusters/Structural_Data/Most_common_nprop.shp")
 library(maptiles)
 SA_reprok <- project(SA_hex,"epsg:4326")
 bg <- get_tiles(ext(SA_reprok), provider = 'Esri.WorldImagery', zoom = 7)
