@@ -16,19 +16,13 @@ myfunc <- function(x){
 
 # Read in FieldData -------------------------------------------------------
 
-field_plots <- readxl::read_excel("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/ForestInventoryPlots.xlsx") %>% filter(!grepl('22_|53_1', .$FieldSite)) %>%
-  group_by(FieldSite) %>% dplyr::select(dplyr::starts_with('Prop')) %>% data.table(.) %>% .[, lapply(.SD, myfunc), by =FieldSite] %>%  
-  mutate(decid_con_rat = case_when(
-    isZero(Prop.Con) & isZero(Prop.Decidious) ~ 1,
-    isZero(Prop.Con) & Prop.Decidious >= 0 ~ 0,
-    Prop.Con >= 0 & isZero(Prop.Decidious) ~ 0,
-    TRUE ~ Prop.Con/Prop.Decidious), 
-    rounded_out = (decid_con_rat-min(decid_con_rat))/(max(decid_con_rat)-min(decid_con_rat)))
-setnames(field_plots, 'FieldSite', 'Plot_ID')
+field_data <- read.csv('F:/Quesnel_RPA_Lidar2022/ABA_validation/plot_2022_2024_liam_averagedplots.csv')
 
-lidar_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/lidar_plot_metrics_ttops.csv") %>% filter(!grepl('22 | 53_1', Plot_ID)) %>% 
+lidar_plots2022 <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/lidar_plot_metrics_ttops.csv") %>% filter(!grepl('22 | 53_1', Plot_ID)) %>% 
   dplyr::select(-'X.1')
-
+lidar_plots2024 <-read.csv('F:/Quesnel_RPA_Lidar2022/ABA_validation/Field2024Data/lidar_plot_metrics.csv') %>% 
+  dplyr::select(-c('X.1', 'zvar'))
+setdiff(names(lidar_plots2024), names(lidar_plots2022))
 ## Additional Data Gathered from RPA lidar in same forest type, but not fire disturbed 
 ## added to insure that model captured the full range of forest  types 
 
@@ -37,18 +31,19 @@ liam_lidar <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/Field
 liam_field <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/liam_bsl.csv") %>% 
   dplyr::rename(Plot_ID = PlotID) %>% dplyr::select(-c(X))
 
+lidar_plots <- rbind(lidar_plots2022, lidar_plots2024)
+
 metrics <- (dplyr::select(lidar_plots, -c(Plot_ID, zmin, n, X)))
 M <- cor(metrics, method = 'spearman')
 M_mod <- M 
 M_mod[upper.tri(M)] <- 0
 diag(M_mod) <- 0
-corrplot(M_mod)
+corrplot::corrplot(M_mod)
 
 drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.7))
 drop_metrics
 
-metrics_dropped <- metrics[, !drop_metrics]
-
+metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots['Plot_ID'])
 
 # Composition and Bare Ground Models --------------------------------------
 source('D:/Paper2_Clean/Data_ProcessingScripts/CompositionModel.R')

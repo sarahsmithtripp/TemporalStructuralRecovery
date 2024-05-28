@@ -1,7 +1,7 @@
 #This script uses a gamma hurdel model to fit a basal area model to the dataset because the data is zero inflated 
 # metrics to drop is rerun w/in the scrip becasue lidar plots is augmented with data from collaborator 
 #Augmented data details:
-  #collected same year in  similiar forest type and location 
+  #collected same year in  similar forest type and location 
   #added to make sure that the data was not limited to the low basal areas we sampled in the field 
 
 ## Drop hyper correlated variables 
@@ -15,7 +15,7 @@ diag(M_mod) <- 0
 
 drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.5))
 drop_metrics
-metrics_dropped <- metrics[, !drop_metrics]
+metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots$Plot_ID)
 
 ## this gives us 6 variables to develop models from which is GREAT!!! 
 ##Create Model Dataframe 
