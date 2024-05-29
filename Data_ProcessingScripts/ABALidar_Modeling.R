@@ -34,7 +34,7 @@ liam_field <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/Field
 lidar_plots <- rbind(lidar_plots2022, lidar_plots2024)
 
 metrics <- (dplyr::select(lidar_plots, -c(Plot_ID, zmin, n, X)))
-M <- cor(metrics, method = 'spearman')
+M <- cor(metrics, method = 'pearson')
 M_mod <- M 
 M_mod[upper.tri(M)] <- 0
 diag(M_mod) <- 0
@@ -44,7 +44,7 @@ drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.8))
 drop_metrics
 
 metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots['Plot_ID'])
-
+metrics_dropped
 # Composition and Bare Ground Models --------------------------------------
 source('D:/Paper2_Clean/Data_ProcessingScripts/CompositionModel.R')
 
@@ -91,10 +91,10 @@ source('D:/Paper2_Clean/Data_ProcessingScripts/Bare_Groud_Model.R')
 
 #Graphs to pull out 
 ## Update Predictions
-bare_ground_model$prediction <- predict(in_model, bare_ground_model, type = "response")
-
+predicts <- c(rep(NA, 5), fitted(in_model)[1:8], NA, fitted(in_model)[9:length(fitted(in_model))], NA)
+bare_ground_model$prediction <- predicts
 predictions_bare_ground_model <- ggplot(bare_ground_model)  +
-  geom_point(aes(log10(Prop.Bare+1), log10(prediction+1)))+  scale_y_continuous(limits = c(0, 0.3)) +
+  geom_point(aes(log10((as.numeric(Prop.Bare)/100)+1), log10(prediction+1)))+  scale_y_continuous(limits = c(0, 0.3)) +
   geom_abline(slope = 1, intercept = 0) +
   xlab('% measured bare ground') +
   theme_classic(base_size = 12) + ylab('% modeled bare ground')
@@ -108,9 +108,10 @@ predictions_bare_ground_model
 
 # Basal Area Model  -------------------------------------------------------
 ## read in specific basal area field plot data (in own excel sheet because it has DBH and tree heights etcs.)
-BA_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/average_plot_metrics.csv") %>% filter(!grepl('22', Plot_ID))
+#BA_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/average_plot_metrics.csv") %>% filter(!grepl('22', Plot_ID))
+BA_plots <- field_data %>% mutate(Plot_ID = str_to_sentence(Plot_ID))
 lidar_plots <- rbind(dplyr::select(lidar_plots, -'ttops'), liam_lidar) ## Remove ttops which are not necessary for BA model 
-bsl_df <- rbind(liam_field, field_plots[,c('Plot_ID', 'Basal_perhect')])
+bsl_df <- rbind(liam_field, BA_plots[,c('Plot_ID', 'Basal_perhect')]) %>% mutate(Basal_perhect = replace_na(Basal_perhect, 0))
 
 ## These models are gamma hurdle models because the data is zero-inflated 
 ## original script set a new seed 
