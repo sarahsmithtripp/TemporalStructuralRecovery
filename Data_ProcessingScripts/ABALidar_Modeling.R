@@ -170,14 +170,11 @@ predictions_stems <- ggplot(graph_data) +
   geom_abline(slope = 1, intercept = 0) + theme_minimal() + 
   xlab('Measured (# Stems / Plot)') + ylab('Predicted (# Stems / Plot)')  + egg::theme_article() 
 
-
+predictions_stems
 residuals <- ggplot(stems_model %>% mutate(id = rownames(.)),
                     aes(color = as.factor(disturbance_year))) +
   geom_point(aes(x = Plot_ID, y= residual)) + theme_bw()
 
-in_model <- fit_zibinom2
-in_model$fit$par <- params_df_named$est
-final_model <- fit_zibinom2
 #saveRDS(final_model, file = "D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/stem_count_model.rds")
 #future::save_rds(list_save, pathname = "D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/stem_count_kfold.rds")
 #thing <- readRDS("F:/Quesnel_RPA_Lidar2022/ABA_validation/stem_count_kfold.rds")
