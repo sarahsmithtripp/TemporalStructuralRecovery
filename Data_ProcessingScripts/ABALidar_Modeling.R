@@ -109,10 +109,28 @@ predictions_bare_ground_model
 # Basal Area Model  -------------------------------------------------------
 ## read in specific basal area field plot data (in own excel sheet because it has DBH and tree heights etcs.)
 #BA_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/average_plot_metrics.csv") %>% filter(!grepl('22', Plot_ID))
-BA_plots <- field_data %>% mutate(Plot_ID = str_to_sentence(Plot_ID))
+BA_plots <- field_data %>% mutate(Plot_ID = case_when(startsWith(.$Plot_ID, 'site') ~ str_to_sentence(Plot_ID),
+                                                      TRUE ~ Plot_ID))
 lidar_plots <- rbind(dplyr::select(lidar_plots, -'ttops'), liam_lidar) ## Remove ttops which are not necessary for BA model 
-bsl_df <- rbind(liam_field, BA_plots[,c('Plot_ID', 'Basal_perhect')]) %>% mutate(Basal_perhect = replace_na(Basal_perhect, 0))
 
+
+## find hyper correlated 
+metrics <- (dplyr::select(lidar_plots, -c(Plot_ID, X)))
+M <- cor(metrics, method = 'pearson')
+M_mod <- M 
+M_mod[upper.tri(M)] <- 0
+diag(M_mod) <- 0
+corrplot::corrplot(M_mod)
+
+drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.8))
+drop_metrics
+
+metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots['Plot_ID'])
+metrics_dropped
+
+bsl_df <- BA_plots[,c('Plot_ID', 'Basal_perhect')] %>% mutate(Basal_perhect = replace_na(Basal_perhect, 0)) %>% 
+  left_join(metrics_dropped, by = 'Plot_ID') %>% mutate(y = ifelse(Basal_perhect == 0, 0,1))
+head(bsl_df)
 ## These models are gamma hurdle models because the data is zero-inflated 
 ## original script set a new seed 
 set.seed(999)
@@ -126,7 +144,7 @@ predictions_bsl <- ggplot(basal_df, aes(color = as.factor(disturbance_year))) + 
 geom_abline(slope = 1, intercept = 0) + labs(color = "Disturbance Year") +
 xlab(xl) + ylab(yl) +
 xlim(0,30) + ylim(0,30) +egg::theme_article()
-
+predictions_bsl
 residuals <- ggplot(basal_df %>% mutate(id = rownames(.)),
  aes(color = as.factor(disturbance_year))) +
 geom_point(aes(x = Plot_ID, y= residual)) + theme_bw()
@@ -140,8 +158,8 @@ hurdle_models <- list(in_model, in_model_zero, params_df_new, params_df, predict
 set.seed(123) ## reset seed to stay consistent
 # read in correct stem count data 
 ## Read data into R (drop site 22 from model)
-field_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/FieldData/stems_per_plot.csv") %>% filter(!grepl('22', Plot_ID))
-lidar_plots <- read.csv("D:/Paper2_Clean/RPA_data/ABA_Models/ABA_validation/lidar_plot_metrics_ttops.csv") %>% filter(!grepl('22', Plot_ID))
+field_plots <- field_data
+lidar_plots <- rbind(lidar_plots2022, lidar_plots2024)
 
 field_plots <- field_plots %>% mutate(stems_perm2 = round(.$con_stems/900))
 #source('D:/Paper2_Clean/Data_ProcessingScripts/CountModels.R') # Will take some time to run 

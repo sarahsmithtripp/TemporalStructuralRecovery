@@ -4,30 +4,11 @@
   #collected same year in  similar forest type and location 
   #added to make sure that the data was not limited to the low basal areas we sampled in the field 
 
-## Drop hyper correlated variables 
-## plot correlations to see which variables should be dropped 
-metrics <- (dplyr::select(lidar_plots, -c(Plot_ID, zmin, n, X)))
-M <- cor(metrics, method = 'spearman')
-M_mod <- M 
-M_mod[upper.tri(M)] <- 0
-diag(M_mod) <- 0
-#corrplot(M_mod)
-
-drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.5))
-drop_metrics
-metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots$Plot_ID)
-
-## this gives us 6 variables to develop models from which is GREAT!!! 
-##Create Model Dataframe 
-basal_df <- lidar_plots %>% #left_join(metrics_dropped, dplyr::select(lidar_plots, c('zkurt', 'Plot_ID'))) %>% 
-  left_join(., dplyr::select(bsl_df, c('Plot_ID', 'Basal_perhect'))) %>% 
-  mutate(y = ifelse(is.na(.$Basal_perhect), 0, 1)) 
-
 # Originally Attemped to a Fit a Lasso Model  -----------------------------
 ##Build models with these 6 variables LASSO model 
 library(glmnet)
-x <- as.matrix(dplyr::select(basal_df, names(metrics_dropped)))
-y <- basal_df$y
+x <- as.matrix(dplyr::select(bsl_df, names(metrics_dropped)))
+y <- bsl_df$y
 
 # Fitting the model (Ridge: Alpha = 0)
 ## sourced from: https://ricardocarvalho.ca/post/ridge/
@@ -62,7 +43,7 @@ library(MASS)
 library(MuMIn)
 
 ## mostly sourced from https://stats.oarc.ucla.edu/r/dae/logit-regression/
-input_data <- dplyr::select(basal_df, !c('Basal_perhect', 'Plot_ID', 'X', 'n'))
+input_data <- dplyr::select(bsl_df, !c('Basal_perhect', 'Plot_ID', 'n'))
 train = data.frame(input_data)
 dt = sort(sample(nrow(train), nrow(train)*.8))
 train_df = train[dt,]
@@ -76,7 +57,7 @@ AIC(model, null_mod_m1)
 BIC(model, null_mod_m1)
 
 ###UPDATE TEst the prediction outputs
-test_mod_m1 <- glm(y ~ Lkurt, data = train, family = binomial) %>% stepAIC(direction = 'both', trace = T, k = 2)
+test_mod_m1 <- glm(y ~ L2 + L3, data = train, family = binomial) %>% stepAIC(direction = 'both', trace = T, k = 2)
 prediction_test <- predict(test_mod_m1, newdata = test, type = 'link', se = T)
 ## look at the probability output of the data
 prediction <- predict(model, newdata = input_data, type = 'link', se = T)
@@ -106,14 +87,14 @@ test_out$right_wrong <- ifelse(test_out$predicted_outcome == test_out$y, 'Model 
 z <- (test_out$right_wrong == "Model Right")
 sum(z)
 #interacccuracy 
-22/28
+sum(z)/dim(test_out)[1]
 
-new_fit <- lrm(y ~ Lkurt, data = train)
+#new_fit <- lrm(y ~ L2 + L3, data = train)
 AUC <- 0.79 ## this is the probability that a random positive is positioned to the right of a random neagit
 logistic_plot <- ggplot(test_out, aes(x = Lkurt, y = PredictedProb)) + 
-geom_ribbon(aes(ymin = LL, ymax = UL), alpha = 0.2) + geom_line() + 
-geom_point(aes(x = Lkurt, y = y, color = right_wrong), size = 3) + scale_color_manual(values = c("#413629", "#f14a0e")) +
-labs(colour = "") + ylab("Probability of Basal Area > 0") + xlab("Estimate of L-moment Kurtosis") +
+#geom_ribbon(aes(ymin = LL, ymax = UL), alpha = 0.2) + geom_line() + 
+geom_point(aes(x = L3, y = L2, color = right_wrong), size = 3) + scale_color_manual(values = c("#413629", "#f14a0e")) +
+labs(colour = "") + ylab("Estimate of 3rd L-moment") + xlab("Estimate of 2nd L-moment") +
 theme_article(base_size =  12, base_family = "sans") +theme(legend.position = "top")
 logistic_plot
 ## k fol validation  on the logistic regresssion model
@@ -125,21 +106,23 @@ params <- list()
 for(i in 1:length(folds)){
   train <- input_data[folds[[i]],]
   test <- input_data[-folds[[i]],]
-  model_kFold<-glm(y~ Lkurt,
+  model_kFold<-glm(y~ L2 + L3,
                    family = binomial(link=logit), 
                    data=train )
   model_pre<-predict(model_kFold,type='response', newdata=test)
   bin <- ifelse(model_pre <= 0.5, 0, 1)
   model_right <- ifelse(test[,'y'] == bin, 1, 0)
-  auc_value <- append(auc_value, sum(model_right)/nrow(test))
+  auc_value <- append(auc_value, sum(model_right, na.rm =T)/nrow(test))
+  auc_value
   ##ad to df
   params[[i]] <- data.frame(int = model_kFold$coefficients[1], 
-                            lkrt = model_kFold$coefficients[2])
+                            L2 = model_kFold$coefficients[2], 
+                            L3 = model_kFold$coefficients[3])
   ## test og model 
   old_model_pre <- predict(test_mod_m1, newdata=test)
   bin <- ifelse(auc_old <= 0.5, 0, 1)
   old_model_right <- ifelse(test[,'y'] == bin, 1, 0)
-  auc_old <- append(auc_old, sum(model_right)/nrow(test))
+  auc_old <- append(auc_old, sum(old_model_right, na.rm =T)/nrow(test))
 }
 
 mean(auc_value)
@@ -156,18 +139,19 @@ params_df <- bind_rows(params) %>% summarise_all(., .funs = c(mean, sd)) %>%
 ## input model for 1 is better using lasso to fit glm with lasso model
 ## sourced from: https://seananderson.ca/2014/05/18/gamma-hurdle/
 ## second model --- non zero data (the shit that matters )
-m2_data <- dplyr::select(basal_df, -c(y, Plot_ID)) %>% 
+m2_data <- dplyr::select(bsl_df, -c(y, Plot_ID)) %>% 
 filter(., Basal_perhect > 0)
 # garbage model
-m2 <- glm(Basal_perhect ~  ., data = m2_data, family = Gamma(link = log)) 
+m2 <- glm(Basal_perhect ~  ., data = m2_data, family = Gamma(link = log)) %>% stepAIC(direction = 'both' ,
+                                                                                      trace = T, k = 2)
 summary(m2)
 #plot(m2)
 ###weighted to deal with the dispersion 
 n <- 18 
 null_mod_m2 <- glm(Basal_perhect ~ 1, data = m2_data, family =Gamma(link = log))
-m2_w1 <- glm(Basal_perhect ~  pzabovemean + zMADmedian + L3 + Lkurt, data = m2_data, family = Gamma(link = log), 
+m2_w1 <- glm(Basal_perhect ~  pzabovemean + L2 + L3 + L4 + Lkurt, data = m2_data, family = Gamma(link = log), 
 weights = runif(n)) 
-m2_w1_drop <- glm(Basal_perhect ~ pzabovemean + zMADmedian + Lkurt, data = m2_data, family = Gamma(link = log), 
+m2_w1_drop <- glm(Basal_perhect ~  pzabovemean  + L3 + L4 + Lkurt + zmax, data = m2_data, family = Gamma(link = log), 
 weights = runif(n))
 logLik(m2_w1, m2_w1_drop) 
 AIC(m2_w1, m2_w1_drop,  m2)
@@ -175,7 +159,7 @@ AIC(m2_w1, m2_w1_drop,  m2)
 m2_extra <- glm(Basal_perhect ~ pzabovemean + Lkurt, data = m2_data, 
 family = Gamma(link = log))
 
-r.squaredGLMM(m2_extra)
+r.squaredGLMM(m2_w1_drop)
 
 
 ### McFaddens R-squared for model 
@@ -197,7 +181,7 @@ for(i in 1:length(folds)){
   train <- m2_data[folds[[i]],]
   test <- m2_data[-folds[[i]],]
   n <- nrow(train)
-  m2_w1_drop_test <- glm(Basal_perhect ~ pzabovemean + zMADmedian + Lkurt, 
+  m2_w1_drop_test <- glm(Basal_perhect ~  pzabovemean  + L3 + L4 + Lkurt, 
                          data = train, family = Gamma(link = log), 
                   weights = runif(n))
   model_pre <-predict(m2_w1_drop_test,type='response', newdata=test)
@@ -207,9 +191,10 @@ for(i in 1:length(folds)){
                             na.rm = T)^2) ^ 0.5))
   ##ad to df
   new_mod_params[[i]] <- data.frame(int = m2_w1_drop_test$coefficients[1], 
-                                    pszabov = m2_w1_drop_test$coefficients[2],
-                                    zMADmed = m2_w1_drop_test$coefficients[3],
-                                    Lkurt = m2_w1_drop_test$coefficients[4])
+                                    pzabovemean= m2_w1_drop_test$coefficients[2],
+                                  L3 = m2_w1_drop_test$coefficients[3],
+                                    L4 = m2_w1_drop_test$coefficients[4], 
+                                  Lkurt = m2_w1_drop_test$coefficients[5])
 
 }
 mean(r_square_val)
@@ -238,7 +223,7 @@ in_model_zero$coefficients <- params_df$est
 
 # Non-zero Gamma model:
 ##add disturbance_year
-basal_df <- basal_df%>% mutate(disturbance_year = case_when(startsWith(.$Plot_ID,'22_') ~ 2003,
+basal_df <- bsl_df%>% mutate(disturbance_year = case_when(startsWith(.$Plot_ID,'22_') ~ 2003,
                                       startsWith(.$Plot_ID,'26_') ~ 2006,
                                       startsWith(.$Plot_ID,'27_') ~ 2006,
                                       startsWith(.$Plot_ID,'72_') ~ 2011,
@@ -248,7 +233,11 @@ basal_df <- basal_df%>% mutate(disturbance_year = case_when(startsWith(.$Plot_ID
                                       startsWith(.$Plot_ID,'53_') ~ 2010,
                                       startsWith(.$Plot_ID,'92_') ~ 2018,
                                       startsWith(.$Plot_ID,'94_') ~ 2018,
-                                      startsWith(.$Plot_ID,'88_') ~ 2018)) %>% 
+                                      startsWith(.$Plot_ID,'88_') ~ 2018,
+                                      endsWith(.$Plot_ID, '2003') ~ 2003,
+                                      endsWith(.$Plot_ID, '2009') ~ 2009, 
+                                      endsWith(.$Plot_ID, '2015') ~ 2015, 
+                                      endsWith(.$Plot_ID, '2017') ~ 2017))%>% 
                                       mutate(disturbance_year = ifelse(is.na(.$disturbance_year), "Undisturbed",.$disturbance_year) )
 basal_df$predicted <- predict(in_model, basal_df,type = 'response')
 basal_df$residual <- basal_df$Basal_perhect - basal_df$predicted
