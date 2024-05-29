@@ -9,7 +9,7 @@ decid_model <- filter(field_met, Plot_ID %in% lidar_plots$Plot_ID) %>%
                       rounded_out == 1.0 ~ 0.9999, 
                       is.na(rounded_out)  ~ 0.0001, 
                       TRUE ~ as.numeric(as.character(rounded_out)))) %>% 
-  left_join(lidar_plots)
+  left_join(lidar_plots) 
 
 ## run stepwise glm
 input_data <- dplyr::select(decid_model, - c('Plot_ID', "rounded_out", 'X')) %>% na.omit()
@@ -31,7 +31,7 @@ model_w2 <- betareg(y ~zkurt + pzabovemean+ CRR + Lkurt + Lcoefvar, data = na.om
 model_w2a <- betareg(y ~zkurt + pzabovemean+ CRR + Lkurt + Lcoefvar, data = na.omit(input_data), weights = in_w2a)
 model_w2b <- betareg(y ~ zkurt + pzabovemean+ CRR + Lkurt + Lcoefvar, data = na.omit(input_data), weights = in_w2b)
 BIC(model_w2,model_w2a, model_w2b)
-plot(model_w2a)
+#plot(model_w2a)
 summary(model_w2)
 
 model_3 <- betareg(y ~ pzabove1.3 + CRR, data = input_data)
@@ -81,8 +81,15 @@ params_df_new <- bind_rows(new_mod_params[1:100]) %>% summarise_all(., .funs = c
          model_family = paste0('betaregression log link'))
 
 # Create New Updated Model  -----------------------------------------------
-in_model <- kfold_model_2
+in_model <- model
 ##Update Coefficients and R Square
-in_model$coefficients$mean <- params_df_new$est[1:5]
+in_model$coefficients$mean <- params_df_new$est[1:10]
 in_model$coefficients$precision <- params_df_new$est[6]
 in_model$pseudo.r.squared <- params_df_new$r_square[1]
+summary(in_model)
+
+m1$fit <- fitted(model)
+plot(m1$fit, m1$y)
+
+decid_model <- right_join(decid_model, input_data['n'])
+decid_model$prediction <- predict(in_model, decid_model, type = "response")

@@ -40,7 +40,7 @@ M_mod[upper.tri(M)] <- 0
 diag(M_mod) <- 0
 corrplot::corrplot(M_mod)
 
-drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.7))
+drop_metrics <- apply(M_mod, 2, function(x) any(x > 0.8))
 drop_metrics
 
 metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots['Plot_ID'])
@@ -49,9 +49,6 @@ metrics_dropped <- metrics[, !drop_metrics] %>% cbind(lidar_plots['Plot_ID'])
 source('D:/Paper2_Clean/Data_ProcessingScripts/CompositionModel.R')
 
 ## Graphs to Pull out 
-## Update Predictions
-decid_model$prediction <- predict(in_model, decid_model, type = "response")
-
 decid_model <- decid_model%>% mutate(disturbance_year = case_when(startsWith(.$Plot_ID,'22_') ~ 2003,
                                                                   startsWith(.$Plot_ID,'26_') ~ 2006,
                                                                   startsWith(.$Plot_ID,'27_') ~ 2006,
@@ -62,7 +59,11 @@ decid_model <- decid_model%>% mutate(disturbance_year = case_when(startsWith(.$P
                                                                   startsWith(.$Plot_ID,'53_') ~ 2010,
                                                                   startsWith(.$Plot_ID,'92_') ~ 2018,
                                                                   startsWith(.$Plot_ID,'94_') ~ 2018,
-                                                                  startsWith(.$Plot_ID,'88_') ~ 2018))
+                                                                  startsWith(.$Plot_ID,'88_') ~ 2018,
+                                                                  endsWith(.$Plot_ID, '2003') ~ 2003,
+                                                                  endsWith(.$Plot_ID, '2009') ~ 2009, 
+                                                                  endsWith(.$Plot_ID, '2015') ~ 2015, 
+                                                                  endsWith(.$Plot_ID, '2017') ~ 2017))
 
 decid_model$residual <- decid_model$y - decid_model$prediction
 predictions_comp <- ggplot(decid_model, aes(group= as.factor(disturbance_year))) +
